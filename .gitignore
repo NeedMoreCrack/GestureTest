@@ -1,0 +1,140 @@
+# ==============================
+# Gradle
+# ==============================
+
+.gradle/
+build/
+**/build/
+
+# Gradle local cache / task history
+.gradle-cache/
+
+# ==============================
+# Local configuration
+# ==============================
+
+local.properties
+
+# ==============================
+# Android Studio / IntelliJ IDEA
+# ==============================
+
+.idea/
+
+*.iml
+
+# IntelliJ local workspace files
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/usage.statistics.xml
+.idea/dictionaries/
+.idea/shelf/
+
+# Android Studio deployment target
+.idea/deploymentTargetDropDown.xml
+
+# ==============================
+# Kotlin
+# ==============================
+
+.kotlin/
+
+# ==============================
+# Android generated files
+# ==============================
+
+captures/
+.externalNativeBuild/
+.cxx/
+
+# ==============================
+# APK / AAB / Android build output
+# ==============================
+
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# ==============================
+# Signing / Keystore
+# IMPORTANT: Never commit these
+# ==============================
+
+*.jks
+*.keystore
+
+keystore.properties
+
+# ==============================
+# Environment / secrets
+# ==============================
+
+.env
+.env.*
+*.env
+
+secrets.properties
+
+# ==============================
+# OS files
+# ==============================
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+*~
+
+# ==============================
+# Logs
+# ==============================
+
+*.log
+
+# ==============================
+# Temporary files
+# ==============================
+
+*.tmp
+*.temp
+*.swp
+*.swo
+
+# ==============================
+# Python
+# 如果之後 repo 裡放模型轉檔 script
+# ==============================
+
+__pycache__/
+*.py[cod]
+*.pyo
+
+.venv/
+venv/
+env/
+
+# PyCharm
+.idea/
+*.iml
+
+# ==============================
+# ML / Large model checkpoints
+# ==============================
+
+*.pth
+*.pt
+
+# Optional:
+# 如果不想把大型 ONNX 模型放進 Git
+# 就保留這行
+*.onnx
+
+# ONNX external data
+*.onnx.data
