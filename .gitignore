@@ -134,7 +134,7 @@ env/
 # Optional:
 # 如果不想把大型 ONNX 模型放進 Git
 # 就保留這行
-*.onnx
+#*.onnx
 
 # ONNX external data
 *.onnx.data
