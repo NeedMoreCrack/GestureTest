@@ -22,67 +22,51 @@ class CameraController(
 ) {
 
     companion object {
-        private const val TAG =
-            "CameraController"
+        private const val TAG = "CameraController"
     }
 
 
     fun start(
-        lifecycleOwner: LifecycleOwner,
-        previewView: PreviewView
+        lifecycleOwner: LifecycleOwner, previewView: PreviewView
     ) {
-        val cameraProviderFuture =
-            ProcessCameraProvider.getInstance(
-                context
-            )
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(
+            context
+        )
 
         cameraProviderFuture.addListener(
             {
                 try {
-                    val cameraProvider =
-                        cameraProviderFuture.get()
+                    val cameraProvider = cameraProviderFuture.get()
 
                     /*
                      * Camera preview
                      */
-                    val preview =
-                        Preview.Builder()
-                            .build()
-                            .apply {
-                                setSurfaceProvider(
-                                    previewView.surfaceProvider
-                                )
-                            }
+                    val preview = Preview.Builder().build().apply {
+                        setSurfaceProvider(
+                            previewView.surfaceProvider
+                        )
+                    }
 
 
                     /*
                      * Camera image analysis
                      */
-                    val imageAnalysis =
-                        ImageAnalysis.Builder()
-                            .setBackpressureStrategy(
-                                ImageAnalysis
-                                    .STRATEGY_KEEP_ONLY_LATEST
-                            )
-                            .setOutputImageFormat(
-                                ImageAnalysis
-                                    .OUTPUT_IMAGE_FORMAT_RGBA_8888
-                            )
-                            .build()
+                    val imageAnalysis = ImageAnalysis.Builder().setBackpressureStrategy(
+                        ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST
+                    ).setOutputImageFormat(
+                        ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888
+                    ).build()
 
 
                     imageAnalysis.setAnalyzer(
-                        analyzerExecutor,
-                        analyzer
+                        analyzerExecutor, analyzer
                     )
 
 
                     /*
                      * 使用後鏡頭。
                      */
-                    val cameraSelector =
-                        CameraSelector
-                            .DEFAULT_BACK_CAMERA
+                    val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
 
 
                     /*
@@ -95,30 +79,22 @@ class CameraController(
                      * 綁定 Camera。
                      */
                     cameraProvider.bindToLifecycle(
-                        lifecycleOwner,
-                        cameraSelector,
-                        preview,
-                        imageAnalysis
+                        lifecycleOwner, cameraSelector, preview, imageAnalysis
                     )
 
 
                     Log.d(
-                        TAG,
-                        "Camera started"
+                        TAG, "Camera started"
                     )
 
                 } catch (e: Exception) {
                     Log.e(
-                        TAG,
-                        "Camera start failed",
-                        e
+                        TAG, "Camera start failed", e
                     )
                 }
-            },
-            ContextCompat
-                .getMainExecutor(
-                    context
-                )
+            }, ContextCompat.getMainExecutor(
+                context
+            )
         )
     }
 }

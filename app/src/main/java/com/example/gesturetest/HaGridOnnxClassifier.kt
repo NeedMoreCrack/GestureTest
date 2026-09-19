@@ -17,8 +17,7 @@ class HaGridOnnxClassifier(
     context: Context
 ) : AutoCloseable {
 
-    private val ortEnvironment: OrtEnvironment =
-        OrtEnvironment.getEnvironment()
+    private val ortEnvironment: OrtEnvironment = OrtEnvironment.getEnvironment()
 
     private val ortSession: OrtSession
 
@@ -26,27 +25,20 @@ class HaGridOnnxClassifier(
 
         private const val TAG = "HaGridONNX"
 
-        private const val MODEL_FILE =
-            "MobileNetV3_large.onnx"
+        private const val MODEL_FILE = "MobileNetV3_large.onnx"
 
         private const val INPUT_SIZE = 224
 
         /*
          * HaGRID MobileNetV3_large 訓練設定
          */
-        private val MEAN =
-            floatArrayOf(
-                0.54f,
-                0.499f,
-                0.474f
-            )
+        private val MEAN = floatArrayOf(
+            0.54f, 0.499f, 0.474f
+        )
 
-        private val STD =
-            floatArrayOf(
-                0.234f,
-                0.235f,
-                0.231f
-            )
+        private val STD = floatArrayOf(
+            0.234f, 0.235f, 0.231f
+        )
 
         /*
          * output[0] ~ output[33]
@@ -93,42 +85,31 @@ class HaGridOnnxClassifier(
 
     init {
 
-        val modelBytes =
-            context.assets
-                .open(MODEL_FILE)
-                .use {
-                    it.readBytes()
-                }
+        val modelBytes = context.assets.open(MODEL_FILE).use {
+                it.readBytes()
+            }
 
-        val sessionOptions =
-            OrtSession.SessionOptions()
+        val sessionOptions = OrtSession.SessionOptions()
 
-        ortSession =
-            ortEnvironment.createSession(
-                modelBytes,
-                sessionOptions
-            )
-
-        Log.d(
-            TAG,
-            "ONNX session created"
+        ortSession = ortEnvironment.createSession(
+            modelBytes, sessionOptions
         )
 
         Log.d(
-            TAG,
-            "Input names = ${ortSession.inputNames}"
+            TAG, "ONNX session created"
         )
 
         Log.d(
-            TAG,
-            "Output names = ${ortSession.outputNames}"
+            TAG, "Input names = ${ortSession.inputNames}"
+        )
+
+        Log.d(
+            TAG, "Output names = ${ortSession.outputNames}"
         )
     }
 
     data class Result(
-        val label: String,
-        val confidence: Float,
-        val classIndex: Int
+        val label: String, val confidence: Float, val classIndex: Int
     )
 
     fun classify(
@@ -144,38 +125,28 @@ class HaGridOnnxClassifier(
          * ↓
          * PadIfNeeded(224x224)
          */
-        val processedBitmap =
-            resizeAndPad(bitmap)
+        val processedBitmap = resizeAndPad(bitmap)
 
-        val inputData =
-            bitmapToFloatArray(
-                processedBitmap
-            )
+        val inputData = bitmapToFloatArray(
+            processedBitmap
+        )
 
         /*
          * ONNX input:
          *
          * [1, 3, 224, 224]
          */
-        val inputShape =
-            longArrayOf(
-                1,
-                3,
-                INPUT_SIZE.toLong(),
-                INPUT_SIZE.toLong()
-            )
+        val inputShape = longArrayOf(
+            1, 3, INPUT_SIZE.toLong(), INPUT_SIZE.toLong()
+        )
 
-        val inputTensor =
-            OnnxTensor.createTensor(
-                ortEnvironment,
-                FloatBuffer.wrap(inputData),
-                inputShape
-            )
+        val inputTensor = OnnxTensor.createTensor(
+            ortEnvironment, FloatBuffer.wrap(inputData), inputShape
+        )
 
         inputTensor.use { tensor ->
 
-            val inputName =
-                ortSession.inputNames.first()
+            val inputName = ortSession.inputNames.first()
 
             ortSession.run(
                 mapOf(
@@ -183,52 +154,36 @@ class HaGridOnnxClassifier(
                 )
             ).use { results ->
 
-                @Suppress("UNCHECKED_CAST")
-                val output =
-                    results[0].value
-                            as Array<FloatArray>
+                @Suppress("UNCHECKED_CAST") val output = results[0].value as Array<FloatArray>
 
-                val logits =
-                    output[0]
+                val logits = output[0]
 
                 /*
                  * 模型輸出是 logits。
                  *
                  * 用 softmax 轉成比較直覺的 confidence。
                  */
-                val probabilities =
-                    softmax(logits)
+                val probabilities = softmax(logits)
 
                 var bestIndex = 0
-                var bestScore =
-                    probabilities[0]
+                var bestScore = probabilities[0]
 
-                for (
-                i in 1
-                        until probabilities.size
-                ) {
+                for (i in 1 until probabilities.size) {
 
-                    if (
-                        probabilities[i] >
-                        bestScore
-                    ) {
+                    if (probabilities[i] > bestScore) {
 
-                        bestScore =
-                            probabilities[i]
+                        bestScore = probabilities[i]
 
                         bestIndex = i
                     }
                 }
 
                 return Result(
-                    label =
-                        LABELS[bestIndex],
+                    label = LABELS[bestIndex],
 
-                    confidence =
-                        bestScore,
+                    confidence = bestScore,
 
-                    classIndex =
-                        bestIndex
+                    classIndex = bestIndex
                 )
             }
         }
@@ -247,41 +202,25 @@ class HaGridOnnxClassifier(
         source: Bitmap
     ): Bitmap {
 
-        val width =
-            source.width
+        val width = source.width
 
-        val height =
-            source.height
+        val height = source.height
 
-        val scale =
-            INPUT_SIZE.toFloat() /
-                    max(width, height)
+        val scale = INPUT_SIZE.toFloat() / max(width, height)
 
-        val targetWidth =
-            (width * scale)
-                .roundToInt()
+        val targetWidth = (width * scale).roundToInt()
 
-        val targetHeight =
-            (height * scale)
-                .roundToInt()
+        val targetHeight = (height * scale).roundToInt()
 
-        val resized =
-            Bitmap.createScaledBitmap(
-                source,
-                targetWidth,
-                targetHeight,
-                true
-            )
+        val resized = Bitmap.createScaledBitmap(
+            source, targetWidth, targetHeight, true
+        )
 
-        val result =
-            Bitmap.createBitmap(
-                INPUT_SIZE,
-                INPUT_SIZE,
-                Bitmap.Config.ARGB_8888
-            )
+        val result = Bitmap.createBitmap(
+            INPUT_SIZE, INPUT_SIZE, Bitmap.Config.ARGB_8888
+        )
 
-        val canvas =
-            Canvas(result)
+        val canvas = Canvas(result)
 
         /*
          * HaGRID 官方 padding：
@@ -290,30 +229,19 @@ class HaGridOnnxClassifier(
          */
         canvas.drawColor(
             Color.rgb(
-                144,
-                144,
-                144
+                144, 144, 144
             )
         )
 
-        val left =
-            (INPUT_SIZE - targetWidth) /
-                    2f
+        val left = (INPUT_SIZE - targetWidth) / 2f
 
-        val top =
-            (INPUT_SIZE - targetHeight) /
-                    2f
+        val top = (INPUT_SIZE - targetHeight) / 2f
 
         canvas.drawBitmap(
-            resized,
-            left,
-            top,
-            null
+            resized, left, top, null
         )
 
-        if (
-            resized !== source
-        ) {
+        if (resized !== source) {
             resized.recycle()
         }
 
@@ -336,50 +264,29 @@ class HaGridOnnxClassifier(
         bitmap: Bitmap
     ): FloatArray {
 
-        val pixels =
-            IntArray(
-                INPUT_SIZE *
-                        INPUT_SIZE
-            )
-
-        bitmap.getPixels(
-            pixels,
-            0,
-            INPUT_SIZE,
-            0,
-            0,
-            INPUT_SIZE,
-            INPUT_SIZE
+        val pixels = IntArray(
+            INPUT_SIZE * INPUT_SIZE
         )
 
-        val channelSize =
-            INPUT_SIZE *
-                    INPUT_SIZE
+        bitmap.getPixels(
+            pixels, 0, INPUT_SIZE, 0, 0, INPUT_SIZE, INPUT_SIZE
+        )
 
-        val result =
-            FloatArray(
-                3 *
-                        channelSize
-            )
+        val channelSize = INPUT_SIZE * INPUT_SIZE
 
-        for (
-        i in pixels.indices
-        ) {
+        val result = FloatArray(
+            3 * channelSize
+        )
 
-            val pixel =
-                pixels[i]
+        for (i in pixels.indices) {
 
-            val red =
-                Color.red(pixel) /
-                        255f
+            val pixel = pixels[i]
 
-            val green =
-                Color.green(pixel) /
-                        255f
+            val red = Color.red(pixel) / 255f
 
-            val blue =
-                Color.blue(pixel) /
-                        255f
+            val green = Color.green(pixel) / 255f
+
+            val blue = Color.blue(pixel) / 255f
 
             /*
              * Normalize：
@@ -387,21 +294,11 @@ class HaGridOnnxClassifier(
              * (pixel - mean) / std
              */
 
-            result[i] =
-                (red - MEAN[0]) /
-                        STD[0]
+            result[i] = (red - MEAN[0]) / STD[0]
 
-            result[
-                channelSize + i
-            ] =
-                (green - MEAN[1]) /
-                        STD[1]
+            result[channelSize + i] = (green - MEAN[1]) / STD[1]
 
-            result[
-                channelSize * 2 + i
-            ] =
-                (blue - MEAN[2]) /
-                        STD[2]
+            result[channelSize * 2 + i] = (blue - MEAN[2]) / STD[2]
         }
 
         return result
@@ -414,44 +311,28 @@ class HaGridOnnxClassifier(
         /*
          * 防止 exp overflow
          */
-        val maxValue =
-            logits.maxOrNull()
-                ?: 0f
+        val maxValue = logits.maxOrNull() ?: 0f
 
-        val expValues =
-            FloatArray(
-                logits.size
-            )
+        val expValues = FloatArray(
+            logits.size
+        )
 
         var sum = 0.0
 
-        for (
-        i in logits.indices
-        ) {
+        for (i in logits.indices) {
 
-            val value =
-                exp(
-                    (
-                            logits[i] -
-                                    maxValue
-                            ).toDouble()
-                )
+            val value = exp(
+                (logits[i] - maxValue).toDouble()
+            )
 
-            expValues[i] =
-                value.toFloat()
+            expValues[i] = value.toFloat()
 
             sum += value
         }
 
-        for (
-        i in expValues.indices
-        ) {
+        for (i in expValues.indices) {
 
-            expValues[i] =
-                (
-                        expValues[i] /
-                                sum
-                        ).toFloat()
+            expValues[i] = (expValues[i] / sum).toFloat()
         }
 
         return expValues
@@ -467,8 +348,7 @@ class HaGridOnnxClassifier(
          */
 
         Log.d(
-            TAG,
-            "ONNX session closed"
+            TAG, "ONNX session closed"
         )
     }
 }

@@ -2,189 +2,101 @@ package com.example.gesturetest
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
-import android.graphics.Matrix
 import android.os.Bundle
 import android.util.Log
+import android.widget.Toast
 
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+
 import androidx.camera.core.ImageProxy
+
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+
 import androidx.core.content.ContextCompat
+
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-
 import com.example.gesturetest.camera.CameraController
-import com.example.gesturetest.gesture.GestureStabilizer
-import com.example.gesturetest.gesture.MediaPipeHandDetector
-import com.example.gesturetest.ui.CameraScreen
+
 import com.example.gesturetest.ui.theme.GestureTestTheme
 
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
-import kotlin.math.abs
 
-
-class MainActivity : ComponentActivity() {
+class MainActivity :
+    ComponentActivity() {
 
     companion object {
 
         private const val TAG =
             "MainActivity"
-
-
-        /*
-         * 每 2 個 Camera frame
-         * 執行一次 HaGRID。
-         */
-        private const val HAGRID_FRAME_INTERVAL =
-            2
-
-
-        /*
-         * HaGRID 最低接受信心值。
-         */
-        private const val MIN_GESTURE_CONFIDENCE =
-            0.70f
-
-
-        /*
-         * MediaPipe 必須連續幾次
-         * 沒看到手，
-         * 才正式判定 NO HAND。
-         */
-        private const val NO_HAND_CONFIRM_COUNT =
-            5
-
-
-        /*
-         * confidence 變化小於這個值時，
-         * 不重新刷新 UI。
-         *
-         * 0.01 = 1%
-         */
-        private const val CONFIDENCE_UPDATE_THRESHOLD =
-            0.01f
     }
 
-
     /*
-     * CameraX analyzer thread。
+     * Camera analyzer thread。
      */
     private lateinit var cameraExecutor:
             ExecutorService
 
-
     /*
-     * CameraX controller。
+     * CameraX。
      */
     private lateinit var cameraController:
             CameraController
 
-
     /*
-     * MediaPipe：
-     *
-     * 只負責判斷畫面中
-     * 有沒有手。
+     * MediaPipe。
      */
     private lateinit var handDetector:
             MediaPipeHandDetector
 
+    /*
+     * Cursor / Pinch Controller。
+     */
+    private lateinit var gestureInputController:
+            GestureInputController
 
     /*
-     * HaGRID ONNX：
-     *
-     * 負責辨識實際手勢。
+     * MediaPipe thread
+     * ->
+     * Compose State callback。
      */
-    private lateinit var haGridClassifier:
-            HaGridOnnxClassifier
-
-
-    /*
-     * 手勢 Temporal smoothing。
-     */
-    private val gestureStabilizer =
-        GestureStabilizer(
-            gestureConfirmCount = 2,
-            unknownConfirmCount = 4
-        )
-
-
-    /*
-     * MediaPipe 是否偵測到手。
-     *
-     * MediaPipe callback 與
-     * Camera analyzer 可能不同 thread，
-     * 所以使用 Volatile。
-     */
-    @Volatile
-    private var handDetected =
-        false
-
-
-    /*
-     * Camera frame counter。
-     */
-    private var haGridFrameCounter =
-        0
-
-
-    /*
-     * 連續沒有偵測到手的 frame 數量。
-     */
-    private var noHandFrameCount =
-        0
-
-
-    /*
-     * Compose Camera Permission。
-     */
-    private var cameraPermissionGranted by
-    mutableStateOf(false)
-
-
-    /*
-     * ML -> Compose callback。
-     */
-    private var gestureCallback:
-            ((String, Float) -> Unit)? =
+    private var gestureInputCallback:
+            (
+                (
+                GestureInputController
+                .GestureInput
+            ) -> Unit
+            )? =
         null
 
-
     /*
-     * 最後一次真正送到 UI 的資料。
-     *
-     * 避免每個 frame 都讓 Compose
-     * 重新 Recomposition。
+     * ==========================
+     * Camera Permission
+     * ==========================
      */
-    private var lastDisplayedGesture =
-        ""
 
-    private var lastDisplayedConfidence =
-        -1f
+    private var cameraPermissionGranted by
+    mutableStateOf(
+        false
+    )
 
-
-    /*
-     * Camera permission launcher。
-     */
     private val requestPermissionLauncher =
         registerForActivityResult(
             ActivityResultContracts
                 .RequestPermission()
-        ) { granted ->
+        ) {
+                granted ->
 
             cameraPermissionGranted =
                 granted
-
 
             if (granted) {
 
@@ -202,29 +114,31 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+    /*
+     * ==========================
+     * Lifecycle
+     * ==========================
+     */
 
     override fun onCreate(
-        savedInstanceState: Bundle?
+        savedInstanceState:
+        Bundle?
     ) {
 
         super.onCreate(
             savedInstanceState
         )
 
-
         setupFullScreen()
-
 
         cameraPermissionGranted =
             hasCameraPermission()
 
-
-        setupGestureComponents()
+        setupGesture()
 
         setupCamera()
 
         setupCompose()
-
 
         if (
             !cameraPermissionGranted
@@ -234,11 +148,10 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-
     /*
-     * ==============================
+     * ==========================
      * Full Screen
-     * ==============================
+     * ==========================
      */
 
     private fun setupFullScreen() {
@@ -248,7 +161,6 @@ class MainActivity : ComponentActivity() {
                 window,
                 false
             )
-
 
         WindowInsetsControllerCompat(
             window,
@@ -260,73 +172,86 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-
     /*
-     * ==============================
-     * Gesture / ML Setup
-     * ==============================
+     * ==========================
+     * Gesture
+     * ==========================
      */
 
-    private fun setupGestureComponents() {
+    private fun setupGesture() {
 
-        /*
-         * HaGRID
-         */
-        haGridClassifier =
-            HaGridOnnxClassifier(
-                this
+        gestureInputController =
+            GestureInputController(
+                /*
+                 * Cursor smoothing。
+                 */
+                smoothingAlpha =
+                    0.22f,
+
+                /*
+                 * 進入 Pinch。
+                 */
+                pinchStartThreshold =
+                    0.45f,
+
+                /*
+                 * Pinch Release。
+                 *
+                 * 使用 hysteresis，
+                 * 防止臨界值抖動。
+                 */
+                pinchReleaseThreshold =
+                    0.60f,
+
+                /*
+                 * MediaPipe 短暫漏手
+                 * 不馬上清 Cursor。
+                 */
+                noHandConfirmCount =
+                    4,
+
+                /*
+                 * 後鏡頭。
+                 */
+                mirrorX =
+                    false
             )
 
-
         /*
-         * MediaPipe
-         *
-         * 注意：
-         *
-         * MediaPipe 不再直接更新 UI。
-         *
-         * 它只改 handDetected。
+         * MediaPipe GestureRecognizer。
          */
         handDetector =
             MediaPipeHandDetector(
-                context = this,
+                context =
+                    this,
 
-                onHandDetected = { detected ->
+                onHandResult = {
+                        handResult ->
 
-                    onHandDetectionChanged(
-                        detected
+                    /*
+                     * MediaPipe
+                     * ↓
+                     * GestureInputController
+                     * ↓
+                     * Cursor / Pinch / GestureInput
+                     */
+                    val input =
+                        gestureInputController
+                            .process(
+                                handResult
+                            )
+
+                    publishGestureInput(
+                        input
                     )
                 }
             )
     }
 
-
     /*
-     * MediaPipe 偵測結果。
-     */
-    private fun onHandDetectionChanged(
-        detected: Boolean
-    ) {
-
-        /*
-         * 只更新狀態。
-         *
-         * 絕對不要在這裡：
-         *
-         * gestureCallback.invoke()
-         *
-         * 否則 MediaPipe 與 HaGRID
-         * 會同時搶著更新 UI。
-         */
-        handDetected =
-            detected
-    }
-
-
-    /*
-     * ==============================
-     * Camera Setup
-     * ==============================
+     * ==========================
+     * Camera
+     * ==========================
      */
 
     private fun setupCamera() {
@@ -335,10 +260,10 @@ class MainActivity : ComponentActivity() {
             Executors
                 .newSingleThreadExecutor()
 
-
         cameraController =
             CameraController(
-                context = this,
+                context =
+                    this,
 
                 analyzerExecutor =
                     cameraExecutor,
@@ -348,11 +273,10 @@ class MainActivity : ComponentActivity() {
             )
     }
 
-
     /*
-     * ==============================
+     * ==========================
      * Compose
-     * ==============================
+     * ==========================
      */
 
     private fun setupCompose() {
@@ -361,168 +285,244 @@ class MainActivity : ComponentActivity() {
 
             GestureTestTheme {
 
-                var gestureName by
+                /*
+                 * ==========================
+                 * Gesture Input
+                 * ==========================
+                 */
+
+                var gestureInput by
                 remember {
 
                     mutableStateOf(
-                        "NO HAND"
+
+                        GestureInputController
+                            .GestureInput(
+                                cursorX =
+                                    0.5f,
+
+                                cursorY =
+                                    0.5f,
+
+                                cursorVisible =
+                                    false,
+
+                                cursorControlEnabled =
+                                    false,
+
+                                isPinching =
+                                    false,
+
+                                event =
+                                    GestureInputController
+                                        .GestureEvent
+                                        .NO_HAND,
+
+                                pinchRatio =
+                                    1f,
+
+                                pinchStrength =
+                                    0f,
+
+                                gestureName =
+                                    "NO HAND",
+
+                                gestureConfidence =
+                                    0f,
+
+                                backHandOpen =
+                                    false,
+
+                                rotationDegrees =
+                                    0
+                            )
                     )
                 }
 
-
-                var confidence by
+                /*
+                 * UI 是否開啟。
+                 */
+                var uiVisible by
                 remember {
 
-                    mutableFloatStateOf(
-                        0f
+                    mutableStateOf(
+                        false
                     )
                 }
 
+                /*
+                 * 最後點擊的 Button。
+                 */
+                var selectedAction by
+                remember {
+
+                    mutableStateOf(
+                        "NONE"
+                    )
+                }
 
                 CameraScreen(
+                    input =
+                        gestureInput,
 
-                    gestureName =
-                        gestureName,
+                    uiVisible =
+                        uiVisible,
 
-                    confidence =
-                        confidence,
+                    selectedAction =
+                        selectedAction,
 
                     cameraPermissionGranted =
                         cameraPermissionGranted,
 
+                    /*
+                     * ==========================
+                     * Camera
+                     * ==========================
+                     */
                     onStartCamera = {
                             lifecycleOwner,
                             previewView ->
 
-
                         /*
-                         * Compose callback。
-                         *
-                         * 整個程式只有
-                         * publishGesture()
-                         * 可以透過這裡改畫面。
+                         * MediaPipe Result
+                         * 傳入 Compose State。
                          */
-                        gestureCallback =
-                            { name, score ->
+                        gestureInputCallback =
+                            {
+                                    newInput ->
 
-                                gestureName =
-                                    name
-
-                                confidence =
-                                    score
+                                gestureInput =
+                                    newInput
                             }
 
+                        cameraController
+                            .start(
+                                lifecycleOwner =
+                                    lifecycleOwner,
 
-                        cameraController.start(
-                            lifecycleOwner =
-                                lifecycleOwner,
+                                previewView =
+                                    previewView
+                            )
+                    },
 
-                            previewView =
-                                previewView
+                    /*
+                     * ==========================
+                     * OPEN UI
+                     * ==========================
+                     *
+                     * 真正觸發條件由
+                     * UiGestureController 控制：
+                     *
+                     * ✊ -> ✋
+                     */
+                    onOpenUi = {
+
+                        if (!uiVisible) {
+
+                            uiVisible =
+                                true
+
+                            Log.d(
+                                TAG,
+                                "UI OPEN"
+                            )
+                        }
+                    },
+
+                    /*
+                     * ==========================
+                     * CLOSE UI
+                     * ==========================
+                     *
+                     * ✋ -> ✊
+                     */
+                    onCloseUi = {
+
+                        if (uiVisible) {
+
+                            uiVisible =
+                                false
+
+                            Log.d(
+                                TAG,
+                                "UI CLOSE"
+                            )
+                        }
+                    },
+
+                    /*
+                     * ==========================
+                     * Button Click
+                     * ==========================
+                     */
+                    onUiAction = {
+                            action ->
+
+                        selectedAction =
+                            action
+
+                        Log.d(
+                            TAG,
+                            "UI Action = $action"
                         )
+
+                        Toast
+                            .makeText(
+                                this,
+                                "Clicked: $action",
+                                Toast.LENGTH_SHORT
+                            )
+                            .show()
+
+                        when (action) {
+
+                            "START GAME" -> {
+
+                                Log.d(
+                                    TAG,
+                                    "START GAME clicked"
+                                )
+                            }
+
+                            "INVENTORY" -> {
+
+                                Log.d(
+                                    TAG,
+                                    "INVENTORY clicked"
+                                )
+                            }
+
+                            "SETTINGS" -> {
+
+                                Log.d(
+                                    TAG,
+                                    "SETTINGS clicked"
+                                )
+                            }
+                        }
                     }
                 )
             }
         }
     }
 
-
     /*
-     * ==============================
+     * ==========================
      * Camera Frame
-     * ==============================
+     * ==========================
      */
 
     private fun analyzeImage(
-        imageProxy: ImageProxy
+        imageProxy:
+        ImageProxy
     ) {
 
         try {
 
-            /*
-             * 1.
-             *
-             * MediaPipe：
-             *
-             * 非同步判斷有沒有手。
-             */
-            handDetector.analyze(
-                imageProxy
-            )
-
-
-            /*
-             * 2.
-             *
-             * HaGRID 不需要每 frame
-             * 都執行。
-             */
-            haGridFrameCounter++
-
-
-            /*
-             * 有手。
-             */
-            if (
-                handDetected
-            ) {
-
-                /*
-                 * 一旦重新看到手，
-                 * 清除 NO HAND 計數。
-                 */
-                noHandFrameCount =
-                    0
-
-
-                /*
-                 * 每 N frame
-                 * 執行一次 HaGRID。
-                 */
-                if (
-                    haGridFrameCounter %
-                    HAGRID_FRAME_INTERVAL ==
-                    0
-                ) {
-
-                    runHaGrid(
-                        imageProxy
-                    )
-                }
-
-            } else {
-
-                /*
-                 * MediaPipe 沒看到手。
-                 *
-                 * 不立即切 NO HAND，
-                 * 先累積次數。
-                 */
-                noHandFrameCount++
-
-
-                if (
-                    noHandFrameCount >=
-                    NO_HAND_CONFIRM_COUNT
-                ) {
-
-                    /*
-                     * 正式確認沒有手。
-                     */
-                    val resetResult =
-                        gestureStabilizer
-                            .reset()
-
-
-                    publishGesture(
-                        gesture =
-                            resetResult.label,
-
-                        confidence =
-                            resetResult.confidence
-                    )
-                }
-            }
+            handDetector
+                .analyze(
+                    imageProxy
+                )
 
         } catch (
             e: Exception
@@ -544,276 +544,35 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-
     /*
-     * ==============================
-     * HaGRID
-     * ==============================
+     * ==========================
+     * Publish Gesture
+     * ==========================
      */
 
-    private fun runHaGrid(
-        imageProxy: ImageProxy
-    ) {
-
-        var bitmap =
-            imageProxy.toBitmap()
-
-
-        try {
-
-            /*
-             * Camera orientation。
-             */
-            bitmap =
-                rotateBitmapIfNeeded(
-                    bitmap =
-                        bitmap,
-
-                    rotationDegrees =
-                        imageProxy
-                            .imageInfo
-                            .rotationDegrees
-                )
-
-
-            /*
-             * ONNX inference。
-             */
-            val result =
-                haGridClassifier
-                    .classify(
-                        bitmap
-                    )
-
-
-            /*
-             * Confidence filter。
-             */
-            val filteredLabel =
-                filterGesture(
-                    label =
-                        result.label,
-
-                    confidence =
-                        result.confidence
-                )
-
-
-            /*
-             * Temporal smoothing。
-             *
-             * 現在 label 與 confidence
-             * 是一起保存的。
-             */
-            val stableResult =
-                gestureStabilizer
-                    .stabilize(
-                        newGesture =
-                            filteredLabel,
-
-                        confidence =
-                            result.confidence
-                    )
-
-
-            Log.d(
-                "HaGrid",
-
-                "raw=${result.label}, " +
-                        "confidence=${result.confidence}, " +
-                        "filtered=$filteredLabel, " +
-                        "stable=${stableResult.label}, " +
-                        "stableConfidence=${stableResult.confidence}"
-            )
-
-
-            /*
-             * 唯一 UI 更新入口。
-             */
-            publishGesture(
-                gesture =
-                    stableResult.label,
-
-                confidence =
-                    stableResult.confidence
-            )
-
-        } catch (
-            e: Exception
-        ) {
-
-            Log.e(
-                "HaGrid",
-                "HaGRID inference failed",
-                e
-            )
-
-        } finally {
-
-            if (
-                !bitmap.isRecycled
-            ) {
-
-                bitmap.recycle()
-            }
-        }
-    }
-
-
-    /*
-     * ==============================
-     * UI Publish
-     * ==============================
-     */
-
-    private fun publishGesture(
-        gesture: String,
-        confidence: Float
+    private fun publishGestureInput(
+        input:
+        GestureInputController
+        .GestureInput
     ) {
 
         /*
-         * 手勢沒有改變，
-         * 而 confidence 變化小於 1%，
-         *
-         * 不需要重新更新 Compose。
+         * MediaPipe callback
+         * 不一定在 Main Thread。
          */
-        if (
-            gesture ==
-            lastDisplayedGesture
-            &&
-            abs(
-                confidence -
-                        lastDisplayedConfidence
-            ) <
-            CONFIDENCE_UPDATE_THRESHOLD
-        ) {
-
-            return
-        }
-
-
-        lastDisplayedGesture =
-            gesture
-
-        lastDisplayedConfidence =
-            confidence
-
-
         runOnUiThread {
 
-            gestureCallback
+            gestureInputCallback
                 ?.invoke(
-                    gesture,
-                    confidence
+                    input
                 )
         }
     }
 
-
     /*
-     * ==============================
-     * HaGRID Filter
-     * ==============================
-     */
-
-    private fun filterGesture(
-        label: String,
-        confidence: Float
-    ): String {
-
-        return when {
-
-            /*
-             * 模型自己判定沒有明確手勢。
-             */
-            label ==
-                    "no_gesture" -> {
-
-                "UNKNOWN"
-            }
-
-
-            /*
-             * Confidence 太低。
-             */
-            confidence <
-                    MIN_GESTURE_CONFIDENCE -> {
-
-                "UNKNOWN"
-            }
-
-
-            else -> {
-
-                label
-            }
-        }
-    }
-
-
-    /*
-     * ==============================
-     * Bitmap Rotation
-     * ==============================
-     */
-
-    private fun rotateBitmapIfNeeded(
-        bitmap: Bitmap,
-        rotationDegrees: Int
-    ): Bitmap {
-
-        if (
-            rotationDegrees ==
-            0
-        ) {
-
-            return bitmap
-        }
-
-
-        val matrix =
-            Matrix().apply {
-
-                postRotate(
-                    rotationDegrees
-                        .toFloat()
-                )
-            }
-
-
-        val rotatedBitmap =
-            Bitmap.createBitmap(
-                bitmap,
-                0,
-                0,
-                bitmap.width,
-                bitmap.height,
-                matrix,
-                true
-            )
-
-
-        /*
-         * createBitmap 建立新 Bitmap，
-         * 舊的可以回收。
-         */
-        if (
-            rotatedBitmap !==
-            bitmap
-        ) {
-
-            bitmap.recycle()
-        }
-
-
-        return rotatedBitmap
-    }
-
-
-    /*
-     * ==============================
-     * Camera Permission
-     * ==============================
+     * ==========================
+     * Permission
+     * ==========================
      */
 
     private fun hasCameraPermission():
@@ -828,7 +587,6 @@ class MainActivity : ComponentActivity() {
                     .PERMISSION_GRANTED
     }
 
-
     private fun requestCameraPermission() {
 
         requestPermissionLauncher
@@ -837,42 +595,41 @@ class MainActivity : ComponentActivity() {
             )
     }
 
-
     /*
-     * ==============================
+     * ==========================
      * Destroy
-     * ==============================
+     * ==========================
      */
 
     override fun onDestroy() {
 
         super.onDestroy()
 
-
         if (
             ::cameraExecutor
                 .isInitialized
         ) {
 
-            cameraExecutor.shutdown()
+            cameraExecutor
+                .shutdown()
         }
-
 
         if (
             ::handDetector
                 .isInitialized
         ) {
 
-            handDetector.close()
+            handDetector
+                .close()
         }
 
-
         if (
-            ::haGridClassifier
+            ::gestureInputController
                 .isInitialized
         ) {
 
-            haGridClassifier.close()
+            gestureInputController
+                .reset()
         }
     }
 }

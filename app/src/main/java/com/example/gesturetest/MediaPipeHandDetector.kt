@@ -1,4 +1,4 @@
-package com.example.gesturetest.gesture
+package com.example.gesturetest
 
 import android.content.Context
 import android.os.SystemClock
@@ -17,11 +17,12 @@ import com.google.mediapipe.tasks.vision.gesturerecognizer.GestureRecognizer
 
 class MediaPipeHandDetector(
     context: Context,
-    private val onHandDetected:
-        (Boolean) -> Unit
+    private val onHandResult:
+        (HandDetectionResult?) -> Unit
 ) : AutoCloseable {
 
     companion object {
+
         private const val TAG =
             "MediaPipeHandDetector"
 
@@ -30,13 +31,64 @@ class MediaPipeHandDetector(
     }
 
 
+    /*
+     * MediaPipe Hand Landmark。
+     */
+    data class HandPoint(
+        val x: Float,
+        val y: Float,
+        val z: Float
+    )
+
+
+    /*
+     * 傳給 GestureInputController 的結果。
+     */
+    data class HandDetectionResult(
+
+        val landmarks:
+        List<HandPoint>,
+
+        val gestureName:
+        String,
+
+        val gestureConfidence:
+        Float,
+
+        /*
+         * CameraX 畫面旋轉角度。
+         *
+         * 通常：
+         * 0 / 90 / 180 / 270
+         */
+        val rotationDegrees:
+        Int
+    )
+
+
     private val gestureRecognizer:
             GestureRecognizer
 
 
+    /*
+     * recognizeAsync() 是非同步的。
+     *
+     * setResultListener 在 init 裡，
+     * 無法直接拿 analyze() 裡面的 local variable。
+     *
+     * 所以把目前 Camera Rotation
+     * 暫存在 class field。
+     */
+    @Volatile
+    private var currentRotationDegrees =
+        0
+
+
     init {
+
         val baseOptions =
-            BaseOptions.builder()
+            BaseOptions
+                .builder()
                 .setModelAssetPath(
                     MODEL_NAME
                 )
@@ -47,40 +99,192 @@ class MediaPipeHandDetector(
             GestureRecognizer
                 .GestureRecognizerOptions
                 .builder()
+
                 .setBaseOptions(
                     baseOptions
                 )
+
                 .setRunningMode(
                     RunningMode.LIVE_STREAM
                 )
+
+                /*
+                 * Demo 先只追蹤一隻手。
+                 */
+                .setNumHands(
+                    1
+                )
+
                 .setMinHandDetectionConfidence(
                     0.5f
                 )
+
                 .setMinHandPresenceConfidence(
                     0.5f
                 )
+
                 .setMinTrackingConfidence(
                     0.5f
                 )
-                .setResultListener {
-                        result,
-                        _ ->
+
+                /*
+                 * ==========================
+                 * MediaPipe Result
+                 * ==========================
+                 */
+                .setResultListener { result,
+                                     _ ->
+
+
+                    val hands =
+                        result.landmarks()
+
 
                     /*
-                     * landmarks() 有資料
-                     * 代表 MediaPipe 有看到手。
+                     * 沒有偵測到手。
                      */
-                    val detected =
-                        result
-                            .landmarks()
-                            .isNotEmpty()
+                    if (
+                        hands.isEmpty()
+                    ) {
 
-                    onHandDetected(
-                        detected
+                        onHandResult(
+                            null
+                        )
+
+                        return@setResultListener
+                    }
+
+
+                    /*
+                     * 目前只取第一隻手。
+                     */
+                    val hand =
+                        hands.first()
+
+
+                    /*
+                     * MediaPipe Landmark
+                     * ↓
+                     * 我們自己的 HandPoint
+                     */
+                    val points =
+                        hand.map {
+
+                            HandPoint(
+                                x =
+                                    it.x(),
+
+                                y =
+                                    it.y(),
+
+                                z =
+                                    it.z()
+                            )
+                        }
+
+
+                    /*
+                     * 正常一隻手應該有
+                     * 21 個 landmark。
+                     */
+                    if (
+                        points.size < 21
+                    ) {
+
+                        Log.w(
+                            TAG,
+                            "Invalid landmark count: ${points.size}"
+                        )
+
+
+                        onHandResult(
+                            null
+                        )
+
+
+                        return@setResultListener
+                    }
+
+
+                    /*
+                     * ==========================
+                     * Gesture Classification
+                     * ==========================
+                     */
+
+                    val gestureGroups =
+                        result.gestures()
+
+
+                    var gestureName =
+                        "UNKNOWN"
+
+
+                    var gestureConfidence =
+                        0f
+
+
+                    if (
+                        gestureGroups.isNotEmpty()
+                        &&
+                        gestureGroups
+                            .first()
+                            .isNotEmpty()
+                    ) {
+
+                        val bestGesture =
+                            gestureGroups
+                                .first()
+                                .first()
+
+
+                        gestureName =
+                            bestGesture
+                                .categoryName()
+
+
+                        gestureConfidence =
+                            bestGesture
+                                .score()
+                    }
+
+
+                    /*
+                     * ==========================
+                     * 回傳給 MainActivity
+                     * ==========================
+                     */
+
+                    onHandResult(
+
+                        HandDetectionResult(
+
+                            landmarks =
+                                points,
+
+                            gestureName =
+                                gestureName,
+
+                            gestureConfidence =
+                                gestureConfidence,
+
+                            /*
+                             * 使用 analyze()
+                             * 最近取得的 Camera Rotation。
+                             */
+                            rotationDegrees =
+                                currentRotationDegrees
+                        )
                     )
                 }
-                .setErrorListener {
-                        error ->
+
+                /*
+                 * ==========================
+                 * Error
+                 * ==========================
+                 */
+                .setErrorListener { error ->
+
 
                     Log.e(
                         TAG,
@@ -88,6 +292,7 @@ class MediaPipeHandDetector(
                         error
                     )
                 }
+
                 .build()
 
 
@@ -97,8 +302,20 @@ class MediaPipeHandDetector(
                     context,
                     options
                 )
+
+
+        Log.d(
+            TAG,
+            "GestureRecognizer created"
+        )
     }
 
+
+    /*
+     * ==============================
+     * Camera Frame Analyze
+     * ==============================
+     */
 
     @OptIn(
         ExperimentalGetImage::class
@@ -106,23 +323,44 @@ class MediaPipeHandDetector(
     fun analyze(
         imageProxy: ImageProxy
     ) {
+
         val mediaImage =
             imageProxy.image
                 ?: return
 
 
-        val mpImage =
-            MediaImageBuilder(
-                mediaImage
-            ).build()
-
-
+        /*
+         * CameraX 回傳目前 Frame
+         * 相對於目標顯示方向的旋轉角度。
+         */
         val rotationDegrees =
             imageProxy
                 .imageInfo
                 .rotationDegrees
 
 
+        /*
+         * 保存給 async callback 使用。
+         */
+        currentRotationDegrees =
+            rotationDegrees
+
+
+        /*
+         * Android MediaImage
+         * ↓
+         * MediaPipe MPImage
+         */
+        val mpImage =
+            MediaImageBuilder(
+                mediaImage
+            ).build()
+
+
+        /*
+         * 告訴 MediaPipe
+         * 這張 Camera Frame 要旋轉多少。
+         */
         val imageProcessingOptions =
             ImageProcessingOptions
                 .builder()
@@ -132,6 +370,21 @@ class MediaPipeHandDetector(
                 .build()
 
 
+        /*
+         * Debug：
+         * 如果你要確認手機方向，
+         * 可以暫時打開這個 Log。
+         */
+        Log.v(
+            TAG,
+            "rotationDegrees=$rotationDegrees"
+        )
+
+
+        /*
+         * LIVE_STREAM
+         * 使用 recognizeAsync。
+         */
         gestureRecognizer
             .recognizeAsync(
                 mpImage,
@@ -141,7 +394,20 @@ class MediaPipeHandDetector(
     }
 
 
+    /*
+     * ==============================
+     * Close
+     * ==============================
+     */
+
     override fun close() {
+
         gestureRecognizer.close()
+
+
+        Log.d(
+            TAG,
+            "GestureRecognizer closed"
+        )
     }
 }

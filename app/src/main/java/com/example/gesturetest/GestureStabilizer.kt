@@ -1,41 +1,33 @@
 package com.example.gesturetest.gesture
 
 class GestureStabilizer(
-    private val gestureConfirmCount: Int = 2,
-    private val unknownConfirmCount: Int = 4
+    private val gestureConfirmCount: Int = 2, private val unknownConfirmCount: Int = 4
 ) {
 
     data class StableResult(
-        val label: String,
-        val confidence: Float
+        val label: String, val confidence: Float
     )
 
     /*
      * 目前正式顯示的結果。
      */
-    private var stableGesture =
-        "NO HAND"
+    private var stableGesture = "NO HAND"
 
-    private var stableConfidence =
-        0f
+    private var stableConfidence = 0f
 
 
     /*
      * 正在觀察的新手勢。
      */
-    private var candidateGesture =
-        ""
+    private var candidateGesture = ""
 
-    private var candidateConfidence =
-        0f
+    private var candidateConfidence = 0f
 
-    private var candidateCount =
-        0
+    private var candidateCount = 0
 
 
     fun stabilize(
-        newGesture: String,
-        confidence: Float
+        newGesture: String, confidence: Float
     ): StableResult {
 
         /*
@@ -43,19 +35,14 @@ class GestureStabilizer(
          *
          * 手勢沒變時允許更新 confidence。
          */
-        if (
-            newGesture ==
-            stableGesture
-        ) {
+        if (newGesture == stableGesture) {
 
             clearCandidate()
 
-            stableConfidence =
-                confidence
+            stableConfidence = confidence
 
             return StableResult(
-                label = stableGesture,
-                confidence = stableConfidence
+                label = stableGesture, confidence = stableConfidence
             )
         }
 
@@ -63,19 +50,13 @@ class GestureStabilizer(
         /*
          * 出現新的候選手勢。
          */
-        if (
-            newGesture !=
-            candidateGesture
-        ) {
+        if (newGesture != candidateGesture) {
 
-            candidateGesture =
-                newGesture
+            candidateGesture = newGesture
 
-            candidateConfidence =
-                confidence
+            candidateConfidence = confidence
 
-            candidateCount =
-                1
+            candidateCount = 1
 
         } else {
 
@@ -84,8 +65,7 @@ class GestureStabilizer(
              */
             candidateCount++
 
-            candidateConfidence =
-                confidence
+            candidateConfidence = confidence
         }
 
 
@@ -93,68 +73,52 @@ class GestureStabilizer(
          * UNKNOWN 要比正常 gesture
          * 更難進入穩定狀態。
          */
-        val requiredCount =
-            if (
-                newGesture ==
-                "UNKNOWN"
-            ) {
-                unknownConfirmCount
-            } else {
-                gestureConfirmCount
-            }
+        val requiredCount = if (newGesture == "UNKNOWN") {
+            unknownConfirmCount
+        } else {
+            gestureConfirmCount
+        }
 
 
         /*
          * 達到確認次數才真正切換。
          */
-        if (
-            candidateCount >=
-            requiredCount
-        ) {
+        if (candidateCount >= requiredCount) {
 
-            stableGesture =
-                candidateGesture
+            stableGesture = candidateGesture
 
-            stableConfidence =
-                candidateConfidence
+            stableConfidence = candidateConfidence
 
             clearCandidate()
         }
 
 
         return StableResult(
-            label = stableGesture,
-            confidence = stableConfidence
+            label = stableGesture, confidence = stableConfidence
         )
     }
 
 
     fun reset(): StableResult {
 
-        stableGesture =
-            "NO HAND"
+        stableGesture = "NO HAND"
 
-        stableConfidence =
-            0f
+        stableConfidence = 0f
 
         clearCandidate()
 
         return StableResult(
-            label = stableGesture,
-            confidence = stableConfidence
+            label = stableGesture, confidence = stableConfidence
         )
     }
 
 
     private fun clearCandidate() {
 
-        candidateGesture =
-            ""
+        candidateGesture = ""
 
-        candidateConfidence =
-            0f
+        candidateConfidence = 0f
 
-        candidateCount =
-            0
+        candidateCount = 0
     }
 }
