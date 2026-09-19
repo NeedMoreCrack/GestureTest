@@ -1,16 +1,23 @@
 package com.example.gesturetest.gesture
 
-
 class GestureStabilizer(
     private val gestureConfirmCount: Int = 2,
     private val unknownConfirmCount: Int = 4
 ) {
 
+    data class StableResult(
+        val label: String,
+        val confidence: Float
+    )
+
     /*
-     * 目前正式手勢。
+     * 目前正式顯示的結果。
      */
     private var stableGesture =
         "NO HAND"
+
+    private var stableConfidence =
+        0f
 
 
     /*
@@ -19,28 +26,37 @@ class GestureStabilizer(
     private var candidateGesture =
         ""
 
+    private var candidateConfidence =
+        0f
 
-    /*
-     * 候選手勢連續出現次數。
-     */
     private var candidateCount =
         0
 
 
     fun stabilize(
-        newGesture: String
-    ): String {
+        newGesture: String,
+        confidence: Float
+    ): StableResult {
 
         /*
          * 跟目前穩定結果相同。
+         *
+         * 手勢沒變時允許更新 confidence。
          */
         if (
             newGesture ==
             stableGesture
         ) {
+
             clearCandidate()
 
-            return stableGesture
+            stableConfidence =
+                confidence
+
+            return StableResult(
+                label = stableGesture,
+                confidence = stableConfidence
+            )
         }
 
 
@@ -51,23 +67,31 @@ class GestureStabilizer(
             newGesture !=
             candidateGesture
         ) {
+
             candidateGesture =
                 newGesture
+
+            candidateConfidence =
+                confidence
 
             candidateCount =
                 1
 
         } else {
+
             /*
-             * 同一個候選結果再次出現。
+             * 同一候選結果再次出現。
              */
             candidateCount++
+
+            candidateConfidence =
+                confidence
         }
 
 
         /*
-         * UNKNOWN 比正常 gesture
-         * 要求更多次確認。
+         * UNKNOWN 要比正常 gesture
+         * 更難進入穩定狀態。
          */
         val requiredCount =
             if (
@@ -81,34 +105,54 @@ class GestureStabilizer(
 
 
         /*
-         * 達到確認次數。
+         * 達到確認次數才真正切換。
          */
         if (
             candidateCount >=
             requiredCount
         ) {
+
             stableGesture =
-                newGesture
+                candidateGesture
+
+            stableConfidence =
+                candidateConfidence
 
             clearCandidate()
         }
 
 
-        return stableGesture
+        return StableResult(
+            label = stableGesture,
+            confidence = stableConfidence
+        )
     }
 
 
-    fun reset() {
+    fun reset(): StableResult {
+
         stableGesture =
             "NO HAND"
 
+        stableConfidence =
+            0f
+
         clearCandidate()
+
+        return StableResult(
+            label = stableGesture,
+            confidence = stableConfidence
+        )
     }
 
 
     private fun clearCandidate() {
+
         candidateGesture =
             ""
+
+        candidateConfidence =
+            0f
 
         candidateCount =
             0

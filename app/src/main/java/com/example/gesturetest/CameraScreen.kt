@@ -27,6 +27,7 @@ fun CameraScreen(
         PreviewView
     ) -> Unit
 ) {
+
     val context =
         LocalContext.current
 
@@ -36,26 +37,37 @@ fun CameraScreen(
 
     /*
      * PreviewView 只建立一次。
+     *
+     * COMPATIBLE 通常會使用 TextureView，
+     * 和 Compose Overlay 疊加比較穩定。
      */
     val previewView =
         remember {
-            PreviewView(context)
+
+            PreviewView(context).apply {
+
+                implementationMode =
+                    PreviewView
+                        .ImplementationMode
+                        .COMPATIBLE
+            }
         }
 
 
     /*
-     * 第一次授權 Camera 後，
-     * cameraPermissionGranted
-     * 由 false → true，
+     * Camera Permission：
      *
-     * LaunchedEffect 會重新執行。
+     * false -> true
+     * 時啟動 Camera。
      */
     LaunchedEffect(
         cameraPermissionGranted
     ) {
+
         if (
             cameraPermissionGranted
         ) {
+
             onStartCamera(
                 lifecycleOwner,
                 previewView
@@ -75,6 +87,7 @@ fun CameraScreen(
         AndroidView(
             modifier =
                 Modifier.fillMaxSize(),
+
             factory = {
                 previewView
             }
@@ -89,6 +102,7 @@ fun CameraScreen(
                 Modifier.align(
                     Alignment.Center
                 ),
+
             horizontalAlignment =
                 Alignment.CenterHorizontally
         ) {
