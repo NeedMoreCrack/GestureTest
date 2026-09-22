@@ -486,3 +486,17 @@ echo
 echo "============================================================"
 echo " Done"
 echo "============================================================"
+
+APK="$HOME/gesture-test/app/build/outputs/apk/debug/app-debug.apk"
+
+if [ -f "$APK" ]; then
+    echo "[OK] APK generated:"
+    echo "$APK"
+
+    if [ -d "$HOME/storage/downloads" ]; then
+        cp "$APK" "$HOME/storage/downloads/gesture-test-debug.apk"
+
+        echo "[OK] APK copied to:"
+        echo "$HOME/storage/downloads/gesture-test-debug.apk"
+    fi
+fi
